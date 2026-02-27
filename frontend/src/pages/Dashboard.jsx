@@ -1,0 +1,300 @@
+import { useEffect, useState } from "react";
+import axios from "axios";
+import { API_BASE_URL } from "../config/api";
+
+export default function Dashboard({ onLogout }) {
+  const [studentProfile, setStudentProfile] = useState({
+    preferredDomain: "",
+    preferredLocation: "",
+    skills: "",
+    expectedStipend: "",
+    durationMonths: "",
+    experienceLevel: "Beginner",
+  });
+  const [results, setResults] = useState([]);
+  const [applications, setApplications] = useState([]);
+  const [resumeFile, setResumeFile] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [applyingId, setApplyingId] = useState(null);
+  const [activeTab, setActiveTab] = useState("recommended");
+
+  const userEmail = localStorage.getItem("userEmail") || "";
+  const userName = localStorage.getItem("userName") || "";
+
+  useEffect(() => {
+    const raw = localStorage.getItem("studentProfile");
+    if (!raw) return;
+    try {
+      const profile = JSON.parse(raw);
+      setStudentProfile({
+        preferredDomain: profile.preferredDomain || "",
+        preferredLocation: profile.preferredLocation || "",
+        skills: profile.skills || "",
+        expectedStipend: profile.expectedStipend || "",
+        durationMonths: profile.durationMonths || "",
+        experienceLevel: profile.experienceLevel || "Beginner",
+      });
+    } catch (err) {
+      console.log("No saved student profile");
+    }
+  }, []);
+
+  const loadMyApplications = async () => {
+    if (!userEmail) return;
+    try {
+      const res = await axios.get(`${API_BASE_URL}/student/applications`, {
+        params: { email: userEmail },
+      });
+      setApplications(res.data || []);
+    } catch (err) {
+      console.log("Failed to load applications");
+    }
+  };
+
+  useEffect(() => {
+    loadMyApplications();
+  }, []);
+
+  const updateProfileField = (key, value) => {
+    setStudentProfile((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const onResumeChange = (e) => {
+    const selected = e.target.files?.[0] || null;
+    if (!selected) {
+      setResumeFile(null);
+      return;
+    }
+    const isPdfMime = selected.type === "application/pdf";
+    const isPdfName = selected.name.toLowerCase().endsWith(".pdf");
+    if (!isPdfMime && !isPdfName) {
+      alert("Only PDF resume is allowed");
+      e.target.value = "";
+      setResumeFile(null);
+      return;
+    }
+    setResumeFile(selected);
+  };
+
+  const runManualMatching = async () => {
+    try {
+      setLoading(true);
+      localStorage.setItem("studentProfile", JSON.stringify(studentProfile));
+      const res = await axios.post(`${API_BASE_URL}/recommend`, studentProfile);
+      setResults(res.data || []);
+      setActiveTab("recommended");
+    } catch (err) {
+      alert(err?.response?.data || "Matching failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyToInternship = async (internshipId) => {
+    if (!userEmail) {
+      alert("Please login again");
+      return;
+    }
+    if (!resumeFile) {
+      alert("Please upload your resume before applying");
+      return;
+    }
+    try {
+      setApplyingId(internshipId);
+      const formData = new FormData();
+      formData.append("internshipId", internshipId);
+      formData.append("studentEmail", userEmail);
+      formData.append("studentName", userName);
+      formData.append("preferredDomain", studentProfile.preferredDomain);
+      formData.append("preferredLocation", studentProfile.preferredLocation);
+      formData.append("skills", studentProfile.skills);
+      formData.append("expectedStipend", studentProfile.expectedStipend);
+      formData.append("durationMonths", studentProfile.durationMonths);
+      formData.append("experienceLevel", studentProfile.experienceLevel);
+      formData.append("resume", resumeFile);
+      await axios.post(`${API_BASE_URL}/apply-internship`, formData);
+      alert("Application submitted to company for approval");
+      await loadMyApplications();
+    } catch (err) {
+      alert(err?.response?.data || "Failed to apply");
+    } finally {
+      setApplyingId(null);
+    }
+  };
+
+  const findApplicationByInternship = (internshipId) =>
+    applications.find((a) => Number(a.internship_id) === Number(internshipId));
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <div className="max-w-[1400px] mx-auto px-4 py-5 md:px-6">
+        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 md:px-6 md:py-4 flex justify-between items-center shadow-sm">
+          <div>
+            <h1 className="heading-font text-2xl font-bold">Student Dashboard</h1>
+            <p className="text-slate-500 text-sm">Find, apply, and track internship approvals.</p>
+          </div>
+          <button
+            onClick={onLogout}
+            className="rounded-lg bg-rose-500 text-white px-4 py-2 font-semibold hover:bg-rose-600 transition"
+          >
+            Logout
+          </button>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-5 mt-5 shadow-sm">
+          <p className="text-slate-600">Enter your details and run matching manually.</p>
+          <div className="grid md:grid-cols-2 gap-3 mt-3">
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Preferred Domain"
+              value={studentProfile.preferredDomain}
+              onChange={(e) => updateProfileField("preferredDomain", e.target.value)}
+            />
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Preferred Location"
+              value={studentProfile.preferredLocation}
+              onChange={(e) => updateProfileField("preferredLocation", e.target.value)}
+            />
+          </div>
+          <input
+            className="rounded-lg border border-slate-300 px-3 py-2 w-full mt-3"
+            placeholder="Skills (comma separated)"
+            value={studentProfile.skills}
+            onChange={(e) => updateProfileField("skills", e.target.value)}
+          />
+          <div className="grid md:grid-cols-2 gap-3 mt-3">
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Expected Stipend"
+              value={studentProfile.expectedStipend}
+              onChange={(e) => updateProfileField("expectedStipend", e.target.value)}
+            />
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Duration (Months)"
+              value={studentProfile.durationMonths}
+              onChange={(e) => updateProfileField("durationMonths", e.target.value)}
+            />
+          </div>
+          <select
+            className="rounded-lg border border-slate-300 px-3 py-2 mt-3 w-full"
+            value={studentProfile.experienceLevel}
+            onChange={(e) => updateProfileField("experienceLevel", e.target.value)}
+          >
+            <option>Beginner</option>
+            <option>Intermediate</option>
+            <option>Advanced</option>
+          </select>
+          <input
+            type="file"
+            accept=".pdf,application/pdf"
+            onChange={onResumeChange}
+            className="rounded-lg border border-slate-300 px-3 py-2 mt-3 w-full bg-white"
+          />
+          <button
+            onClick={runManualMatching}
+            disabled={loading}
+            className="rounded-lg bg-indigo-600 text-white px-5 py-2 font-semibold hover:bg-indigo-700 transition mt-3"
+          >
+            {loading ? "Processing..." : "Run Matching"}
+          </button>
+        </div>
+
+        <div className="mt-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+          <button
+            onClick={() => setActiveTab("recommended")}
+            className={`px-4 py-2 rounded-lg font-semibold transition ${
+              activeTab === "recommended" ? "bg-slate-900 text-white" : "text-slate-600"
+            }`}
+          >
+            Recommended for You
+          </button>
+          <button
+            onClick={() => setActiveTab("applications")}
+            className={`px-4 py-2 rounded-lg font-semibold transition ${
+              activeTab === "applications" ? "bg-slate-900 text-white" : "text-slate-600"
+            }`}
+          >
+            My Applications
+          </button>
+        </div>
+
+        {activeTab === "recommended" ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5 mt-5">
+            {results.map((item) => {
+              const app = findApplicationByInternship(item.id);
+              return (
+                <div key={item.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="heading-font text-3xl font-bold text-slate-900">{item.title}</h3>
+                      <p className="text-slate-500 mt-1">{item.posted_by_name || "Company"}</p>
+                    </div>
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-center min-w-[110px]">
+                      <p className="text-rose-500 text-xs font-bold">MATCH</p>
+                      <p className="text-rose-600 text-3xl font-bold leading-none">{item.match_percent}%</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 mt-4">
+                    <span className="px-3 py-1 rounded-xl bg-slate-100 text-slate-700 text-sm">{item.domain || studentProfile.preferredDomain || "General"}</span>
+                    <span className="px-3 py-1 rounded-xl border border-slate-300 text-slate-700 text-sm">{item.experience_level || studentProfile.experienceLevel}</span>
+                  </div>
+
+                  <p className="text-slate-600 mt-4 line-clamp-2">
+                    Skills required: {item.skills || "Not specified"}
+                  </p>
+
+                  <div className="bg-slate-100 rounded-xl p-4 mt-4 space-y-2 text-slate-700">
+                    <p>Location: {item.location || "Remote"}</p>
+                    <p>Stipend: INR {item.stipend || "-"}/mo</p>
+                    <p>Duration: {item.duration_months || studentProfile.durationMonths || "Flexible"} Months</p>
+                  </div>
+
+                  <div className="mt-5 flex items-center justify-between">
+                    <p className="text-slate-500 text-sm">Posted recently</p>
+                    {app ? (
+                      <span className="px-3 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold uppercase">
+                        {app.status}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => applyToInternship(item.id)}
+                        disabled={applyingId === item.id}
+                        className="rounded-xl bg-indigo-600 text-white px-6 py-2.5 font-semibold hover:bg-indigo-700 transition"
+                      >
+                        {applyingId === item.id ? "Applying..." : "Apply Now"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5">
+            {applications.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-2xl p-8 text-slate-500">
+                No applications yet.
+              </div>
+            ) : (
+              applications.map((app) => (
+                <div key={app.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <h3 className="heading-font text-2xl font-bold text-slate-900">{app.title}</h3>
+                  <p className="text-slate-500 mt-1">{app.location}</p>
+                  <p className="mt-4">
+                    Status:{" "}
+                    <span className="px-3 py-1 rounded-lg bg-slate-200 text-slate-700 uppercase font-semibold">
+                      {app.status}
+                    </span>
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

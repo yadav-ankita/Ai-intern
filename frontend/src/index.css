@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap");
+
+:root {
+  --bg-deep: #071227;
+  --bg-mid: #10284a;
+  --bg-soft: #1a3f6a;
+  --card: rgba(13, 26, 48, 0.72);
+  --line: rgba(138, 174, 232, 0.28);
+  --text: #e9f3ff;
+  --muted: #a8c2e8;
+  --primary: #22c8ff;
+  --secondary: #2ad48f;
+  --danger: #ff6b6b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(1100px 700px at 8% -5%, rgba(34, 200, 255, 0.2), transparent 52%),
+    radial-gradient(900px 600px at 100% 0%, rgba(42, 212, 143, 0.16), transparent 48%),
+    linear-gradient(150deg, var(--bg-deep), var(--bg-mid) 50%, #0a1d37);
+  background-attachment: fixed;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.heading-font {
+  font-family: "Sora", "Manrope", sans-serif;
+}
+
+.shell {
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.glass {
+  background: var(--card);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.input-modern {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
+  color: #10203d;
+  padding: 12px 14px;
+  outline: none;
+}
+
+.input-modern:focus {
+  border-color: rgba(34, 200, 255, 0.9);
+  box-shadow: 0 0 0 3px rgba(34, 200, 255, 0.25);
+}
+
+.btn {
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-weight: 700;
+  transition: transform 0.15s ease, opacity 0.15s ease, box-shadow 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  transform: none;
+}
+
+.btn-primary {
+  color: #052136;
+  background: linear-gradient(120deg, var(--primary), #84f3ff);
+  box-shadow: 0 10px 24px rgba(34, 200, 255, 0.28);
+}
+
+.btn-secondary {
+  color: #072b1c;
+  background: linear-gradient(120deg, var(--secondary), #9af3cb);
+  box-shadow: 0 10px 24px rgba(42, 212, 143, 0.25);
+}
+
+.btn-danger {
+  color: #2b0b0b;
+  background: linear-gradient(120deg, var(--danger), #ffa9a9);
+  box-shadow: 0 10px 24px rgba(255, 107, 107, 0.22);
+}
+
+.btn-outline {
+  color: var(--text);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.muted {
+  color: var(--muted);
+}

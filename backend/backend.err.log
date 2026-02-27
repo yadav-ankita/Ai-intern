@@ -1,0 +1,11 @@
+=AIzaSyDCCg6dq4qqSYddXka2Cejt6mvlWuaiiNM : The term '=AIzaSyDCCg6dq4qqSYddXka2Cejt6mvlWuaiiNM' is not recognized as 
+the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was 
+included, verify that the path is correct and try again.
+At line:1 char:1
++ ='AIzaSyDCCg6dq4qqSYddXka2Cejt6mvlWuaiiNM'; Set-Location 'd:\mithun\A ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (=AIzaSyDCCg6dq4qqSYddXka2Cejt6mvlWuaiiNM:String) [], CommandNotFoundExc 
+   eption
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+Resume recommendation failed: GEMINI_API_KEY is missing
