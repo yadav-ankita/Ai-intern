@@ -45,5 +45,13 @@ frontend/
 
 3. Python AI (optional)
    - `cd python_ai`
+   - `python -m venv venv`
    - `.\venv\Scripts\activate`
+   - `pip install -r requirements.txt`
    - `python app.py`
+
+## NLP Matching (TF-IDF)
+
+- Student dashboard uses `POST /recommend-resume` when a resume PDF is selected.
+- Backend forwards internship data to Python AI `POST /tfidf-match` and combines TF-IDF similarity with profile preferences.
+- Configure Python AI URL in backend with `PYTHON_AI_URL` (default: `http://localhost:5001`).

@@ -5,6 +5,7 @@ const bcrypt = require("bcryptjs");
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
+const axios = require("axios");
 
 const { pool, ensureSchema } = require("./config/db");
 const { buildRecommendationProfile, scoreInternships } = require("./utils/recommendation");
@@ -12,6 +13,7 @@ const { buildRecommendationProfile, scoreInternships } = require("./utils/recomm
 const SECRET = process.env.JWT_SECRET || "aiinternsecret";
 const BASE_DIR = path.resolve(__dirname, "..");
 const UPLOADS_DIR = path.join(BASE_DIR, "uploads");
+const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:5001";
 
 const app = express();
 app.use(cors());
@@ -19,6 +21,14 @@ app.use(express.json());
 app.use("/uploads", express.static(UPLOADS_DIR));
 
 const upload = multer({ dest: UPLOADS_DIR });
+
+const isPdfUpload = (file) => {
+  if (!file) return false;
+  const mime = String(file.mimetype || "").toLowerCase();
+  const name = String(file.originalname || file.filename || "").toLowerCase();
+  const allowedMime = ["application/pdf", "application/x-pdf"];
+  return allowedMime.includes(mime) || name.endsWith(".pdf");
+};
 
 ensureSchema();
 
@@ -82,6 +92,35 @@ const getTopRecommendations = async (profileInput, limit = 5) => {
   return scored.slice(0, limit);
 };
 
+const getResumeRecommendations = async (resumeFilename, profileInput = {}, limit = 5) => {
+  const result = await pool.query("SELECT * FROM internships");
+  const internships = result.rows || [];
+
+  if (internships.length === 0) return [];
+
+  const pythonResponse = await axios.post(`${PYTHON_AI_URL}/tfidf-match`, {
+    file: path.join("uploads", resumeFilename),
+    internships,
+  });
+
+  const ranked = (pythonResponse?.data?.matches || []).map((item) => ({
+    ...item,
+    tfidf_percent: item.match_percent || 0,
+    extracted_skills: pythonResponse?.data?.extracted_skills || [],
+  }));
+
+  const profileBoosted = scoreInternships(ranked, buildRecommendationProfile(profileInput));
+
+  return profileBoosted.slice(0, limit);
+};
+
+const extractResumeProfile = async (resumeFilename) => {
+  const pythonResponse = await axios.post(`${PYTHON_AI_URL}/extract-profile`, {
+    file: path.join("uploads", resumeFilename),
+  });
+  return pythonResponse?.data || {};
+};
+
 app.post("/recommend", async (req, res) => {
   try {
     const recommendations = await getTopRecommendations(req.body || {});
@@ -89,6 +128,62 @@ app.post("/recommend", async (req, res) => {
   } catch (err) {
     console.log(err);
     res.status(500).send("Error in recommendation");
+  }
+});
+
+app.post("/recommend-resume", upload.single("resume"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).send("Resume is required");
+    if (!isPdfUpload(req.file)) {
+      if (req.file.path) fs.unlink(req.file.path, () => {});
+      return res.status(400).send("Only PDF resumes are allowed");
+    }
+
+    const profile = {
+      preferredDomain: req.body.preferredDomain,
+      preferredLocation: req.body.preferredLocation,
+      skills: req.body.skills,
+      expectedStipend: req.body.expectedStipend,
+      durationMonths: req.body.durationMonths,
+      experienceLevel: req.body.experienceLevel,
+    };
+
+    const recommendations = await getResumeRecommendations(req.file.filename, profile);
+    res.json(recommendations);
+  } catch (err) {
+    console.error(err?.response?.data || err);
+    res.status(500).send("Failed to run NLP matching");
+  } finally {
+    if (req.file?.path) {
+      fs.unlink(req.file.path, () => {});
+    }
+  }
+});
+
+app.post("/extract-resume-profile", upload.single("resume"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).send("Resume is required");
+    if (!isPdfUpload(req.file)) {
+      if (req.file.path) fs.unlink(req.file.path, () => {});
+      return res.status(400).send("Only PDF resumes are allowed");
+    }
+
+    const extractedProfile = await extractResumeProfile(req.file.filename);
+    res.json(extractedProfile);
+  } catch (err) {
+    console.error(err?.response?.data || err);
+    if (err?.code === "ECONNREFUSED" || err?.code === "ECONNABORTED") {
+      return res.status(503).send("Python AI service is not reachable. Start python_ai/app.py on port 5001.");
+    }
+    const serviceError = err?.response?.data?.error || err?.response?.data?.message;
+    if (serviceError) {
+      return res.status(500).send(`Resume extraction failed: ${serviceError}`);
+    }
+    res.status(500).send("Failed to extract profile from resume");
+  } finally {
+    if (req.file?.path) {
+      fs.unlink(req.file.path, () => {});
+    }
   }
 });
 
@@ -231,7 +326,7 @@ app.post("/apply-internship", upload.single("resume"), async (req, res) => {
     if (!req.file) {
       return res.status(400).send("Resume is required");
     }
-    if (req.file.mimetype !== "application/pdf") {
+    if (!isPdfUpload(req.file)) {
       if (req.file.path) {
         fs.unlink(req.file.path, () => {});
       }

@@ -35,6 +35,11 @@ const scoreInternships = (internships, profile) => {
 
   return internships
     .map((internship) => {
+      const tfidfPercent = parseAmount(
+        internship.tfidf_percent !== undefined ? internship.tfidf_percent : internship.match_percent
+      );
+      const hasTfidf = tfidfPercent > 0;
+
       const internshipSkills = String(internship.skills || "")
         .toLowerCase()
         .split(/[\s,]+/)
@@ -91,9 +96,12 @@ const scoreInternships = (internships, profile) => {
       const levelDiff = Math.abs(internshipLevel - studentLevel);
       const experienceScore = levelDiff === 0 ? 10 : levelDiff === 1 ? 5 : 0;
 
-      const percent = Math.round(
+      const profilePercent = Math.round(
         skillsScore + domainScore + experienceScore + locationScore + durationScore + stipendScore
       );
+      const percent = hasTfidf
+        ? Math.round((tfidfPercent * 0.7) + (profilePercent * 0.3))
+        : profilePercent;
 
       return {
         ...internship,

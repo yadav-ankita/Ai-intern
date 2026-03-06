@@ -14,7 +14,10 @@ export default function Dashboard({ onLogout }) {
   const [results, setResults] = useState([]);
   const [applications, setApplications] = useState([]);
   const [resumeFile, setResumeFile] = useState(null);
+  const [extractedSkills, setExtractedSkills] = useState([]);
+  const [hasExtracted, setHasExtracted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [applyingId, setApplyingId] = useState(null);
   const [activeTab, setActiveTab] = useState("recommended");
 
@@ -63,6 +66,8 @@ export default function Dashboard({ onLogout }) {
     const selected = e.target.files?.[0] || null;
     if (!selected) {
       setResumeFile(null);
+      setExtractedSkills([]);
+      setHasExtracted(false);
       return;
     }
     const isPdfMime = selected.type === "application/pdf";
@@ -71,22 +76,76 @@ export default function Dashboard({ onLogout }) {
       alert("Only PDF resume is allowed");
       e.target.value = "";
       setResumeFile(null);
+      setExtractedSkills([]);
+      setHasExtracted(false);
       return;
     }
     setResumeFile(selected);
+    setExtractedSkills([]);
+    setHasExtracted(false);
   };
 
   const runManualMatching = async () => {
     try {
       setLoading(true);
       localStorage.setItem("studentProfile", JSON.stringify(studentProfile));
-      const res = await axios.post(`${API_BASE_URL}/recommend`, studentProfile);
+      let res;
+      if (resumeFile) {
+        const formData = new FormData();
+        formData.append("resume", resumeFile);
+        formData.append("preferredDomain", studentProfile.preferredDomain);
+        formData.append("preferredLocation", studentProfile.preferredLocation);
+        formData.append("skills", studentProfile.skills);
+        formData.append("expectedStipend", studentProfile.expectedStipend);
+        formData.append("durationMonths", studentProfile.durationMonths);
+        formData.append("experienceLevel", studentProfile.experienceLevel);
+        res = await axios.post(`${API_BASE_URL}/recommend-resume`, formData);
+      } else {
+        res = await axios.post(`${API_BASE_URL}/recommend`, studentProfile);
+      }
       setResults(res.data || []);
       setActiveTab("recommended");
     } catch (err) {
       alert(err?.response?.data || "Matching failed");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const extractFromResume = async () => {
+    if (!resumeFile) {
+      alert("Please upload your resume first");
+      return;
+    }
+
+    try {
+      setExtracting(true);
+      const formData = new FormData();
+      formData.append("resume", resumeFile);
+      const res = await axios.post(`${API_BASE_URL}/extract-resume-profile`, formData);
+      const extracted = res.data || {};
+      const listFromArray = Array.isArray(extracted.extracted_skills) ? extracted.extracted_skills : [];
+      const listFromString = String(extracted.skills || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      setExtractedSkills(listFromArray.length > 0 ? listFromArray : listFromString);
+      setHasExtracted(true);
+
+      setStudentProfile((prev) => ({
+        ...prev,
+        preferredDomain: extracted.preferredDomain || prev.preferredDomain,
+        preferredLocation: extracted.preferredLocation || prev.preferredLocation,
+        skills: extracted.skills || prev.skills,
+        expectedStipend: extracted.expectedStipend || prev.expectedStipend,
+        durationMonths: extracted.durationMonths || prev.durationMonths,
+        experienceLevel: extracted.experienceLevel || prev.experienceLevel,
+      }));
+    } catch (err) {
+      setHasExtracted(false);
+      alert(err?.response?.data || "Failed to extract fields from resume");
+    } finally {
+      setExtracting(false);
     }
   };
 
@@ -192,6 +251,21 @@ export default function Dashboard({ onLogout }) {
             onChange={onResumeChange}
             className="rounded-lg border border-slate-300 px-3 py-2 mt-3 w-full bg-white"
           />
+          <button
+            onClick={extractFromResume}
+            disabled={extracting}
+            className="rounded-lg bg-emerald-600 text-white px-5 py-2 font-semibold hover:bg-emerald-700 transition mt-3"
+          >
+            {extracting ? "Extracting..." : "Extract"}
+          </button>
+          {hasExtracted && (
+            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+              <p className="text-emerald-800 font-semibold text-sm">Extracted Skills</p>
+              <p className="text-emerald-700 text-sm mt-1">
+                {extractedSkills.length > 0 ? extractedSkills.join(", ") : "No known skills were detected from this resume."}
+              </p>
+            </div>
+          )}
           <button
             onClick={runManualMatching}
             disabled={loading}
