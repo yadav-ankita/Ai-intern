@@ -23,6 +23,13 @@ const ensureSchema = async () => {
     `);
 
     await pool.query(`
+      ALTER TABLE IF EXISTS students
+      ADD COLUMN IF NOT EXISTS location TEXT,
+      ADD COLUMN IF NOT EXISTS skills TEXT,
+      ADD COLUMN IF NOT EXISTS domain TEXT;
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS internship_applications (
         id SERIAL PRIMARY KEY,
         internship_id INTEGER NOT NULL REFERENCES internships(id) ON DELETE CASCADE,

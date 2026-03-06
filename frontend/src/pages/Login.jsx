@@ -6,7 +6,6 @@ export default function Login({ role, setPage, setLoggedIn }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const isStudent = role === "student";
 
   const login = async () => {
     try {
@@ -39,7 +38,7 @@ export default function Login({ role, setPage, setLoggedIn }) {
     <div className="shell flex items-center justify-center">
       <div className="glass w-full max-w-md p-7 md:p-8">
         <h1 className="heading-font text-3xl font-bold text-center mb-2">
-          {isStudent ? "Student Login" : "Company Login"}
+          Login
         </h1>
         <p className="muted text-center mb-6">Access your dashboard and continue your workflow.</p>
 
@@ -62,18 +61,12 @@ export default function Login({ role, setPage, setLoggedIn }) {
         <button onClick={login} disabled={loading} className="btn btn-primary w-full mt-5">
           {loading ? "Logging in..." : "Login"}
         </button>
-        <button
-          onClick={() => setPage(isStudent ? "login-company" : "login-student")}
-          className="btn btn-outline w-full mt-3"
-        >
-          {isStudent ? "Login as Company" : "Login as Student"}
-        </button>
-        <button
-          onClick={() => setPage(isStudent ? "signup-student" : "signup-company")}
-          className="btn btn-outline w-full mt-3"
-        >
-          {isStudent ? "New student? Sign up" : "New company? Sign up"}
-        </button>
+        <p className="text-center mt-4 text-sm muted">
+          Don&apos;t have an account?{" "}
+          <button onClick={() => setPage("register")} className="underline font-semibold">
+            Register
+          </button>
+        </p>
         <button onClick={() => setPage("home")} className="w-full mt-3 text-sm muted">
           Back to Home
         </button>

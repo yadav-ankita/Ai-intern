@@ -61,17 +61,23 @@ app.post("/register/student", async (req, res) => {
     const fullName = (req.body.fullName || req.body.name || req.body.username || "").trim();
     const email = (req.body.email || "").trim().toLowerCase();
     const password = (req.body.password || "").trim();
+    const location = (req.body.location || "").trim();
+    const skills = (req.body.skills || "").trim();
+    const domain = (req.body.domain || "").trim();
 
-    if (!fullName || !email || !password) {
-      return res.status(400).send("Full name, email and password are required");
+    if (!fullName || !email || !password || !location || !skills || !domain) {
+      return res.status(400).send("Full name, email, password, location, skills and domain are required");
     }
 
     const hashed = await bcrypt.hash(password, 10);
 
-    await pool.query("INSERT INTO students(name,email,password) VALUES($1,$2,$3)", [
+    await pool.query("INSERT INTO students(name,email,password,location,skills,domain) VALUES($1,$2,$3,$4,$5,$6)", [
       fullName,
       email,
       hashed,
+      location,
+      skills,
+      domain,
     ]);
 
     res.send("Student registered");
@@ -106,6 +112,71 @@ app.post("/register/company", async (req, res) => {
   }
 });
 
+app.get("/student/profile", async (req, res) => {
+  try {
+    const email = String(req.query.email || "").trim().toLowerCase();
+    if (!email) return res.status(400).send("email query is required");
+
+    const result = await pool.query(
+      `SELECT id, name, email, location, skills, domain
+       FROM students
+       WHERE LOWER(email)=LOWER($1)`,
+      [email]
+    );
+
+    const profile = result.rows[0];
+    if (!profile) return res.status(404).send("Student not found");
+
+    res.json(profile);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Failed to fetch student profile");
+  }
+});
+
+app.patch("/student/profile", async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    if (!email) return res.status(400).send("email is required");
+
+    const fullName = req.body.fullName;
+    const location = req.body.location;
+    const skills = req.body.skills;
+    const domain = req.body.domain;
+
+    const updates = [];
+    const values = [];
+    const pushUpdate = (column, value) => {
+      updates.push(`${column}=$${values.length + 1}`);
+      values.push(String(value ?? "").trim());
+    };
+
+    if (fullName !== undefined) pushUpdate("name", fullName);
+    if (location !== undefined) pushUpdate("location", location);
+    if (skills !== undefined) pushUpdate("skills", skills);
+    if (domain !== undefined) pushUpdate("domain", domain);
+
+    if (updates.length === 0) {
+      return res.status(400).send("At least one field is required to update");
+    }
+
+    values.push(email);
+    const result = await pool.query(
+      `UPDATE students
+       SET ${updates.join(", ")}
+       WHERE LOWER(email)=LOWER($${values.length})
+       RETURNING id, name, email, location, skills, domain`,
+      values
+    );
+
+    if (!result.rows[0]) return res.status(404).send("Student not found");
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Failed to update student profile");
+  }
+});
+
 const getTopRecommendations = async (profileInput, limit = 5) => {
   const result = await pool.query(
     `SELECT * FROM internships
@@ -113,7 +184,7 @@ const getTopRecommendations = async (profileInput, limit = 5) => {
        AND (seats_required IS NULL OR seats_required > 0)`
   );
   const scored = scoreInternships(result.rows, buildRecommendationProfile(profileInput));
-  return scored.slice(0, limit);
+  return scored.slice(0, limit); 
 };
 
 const getResumeRecommendations = async (resumeFilename, profileInput = {}, limit = 5) => {

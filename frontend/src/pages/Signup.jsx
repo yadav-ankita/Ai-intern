@@ -8,6 +8,9 @@ export default function Signup({ role, setPage, setLoggedIn }) {
     password: "",
     fullName: "",
     email: "",
+    location: "",
+    skills: "",
+    domain: "",
   });
   const [companyForm, setCompanyForm] = useState({
     username: "",
@@ -31,6 +34,9 @@ export default function Signup({ role, setPage, setLoggedIn }) {
             password: studentForm.password.trim(),
             fullName: studentForm.fullName.trim(),
             email: studentForm.email.trim().toLowerCase(),
+            location: studentForm.location.trim(),
+            skills: studentForm.skills.trim(),
+            domain: studentForm.domain.trim(),
           }
         : {
             username: companyForm.username.trim(),
@@ -42,7 +48,7 @@ export default function Signup({ role, setPage, setLoggedIn }) {
           };
 
       const requiredFields = isStudent
-        ? [payload.username, payload.password, payload.fullName, payload.email]
+        ? [payload.username, payload.password, payload.fullName, payload.email, payload.location, payload.skills, payload.domain]
         : [payload.username, payload.password, payload.contactName, payload.contactEmail, payload.companyName];
 
       if (requiredFields.some((value) => !value)) {
@@ -63,7 +69,14 @@ export default function Signup({ role, setPage, setLoggedIn }) {
         localStorage.setItem("role", loginRes.data.role);
         localStorage.setItem("userEmail", loginRes.data.email || payload.email);
         localStorage.setItem("userName", loginRes.data.name || payload.fullName);
-        localStorage.setItem("studentProfile", JSON.stringify({}));
+        localStorage.setItem(
+          "studentProfile",
+          JSON.stringify({
+            preferredDomain: payload.domain,
+            preferredLocation: payload.location,
+            skills: payload.skills,
+          })
+        );
 
         setLoggedIn(true);
         alert("Account created and logged in successfully");
@@ -107,7 +120,7 @@ export default function Signup({ role, setPage, setLoggedIn }) {
 
         {isStudent ? (
           <>
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-4">
               <input
                 placeholder="Username"
                 className="input-modern"
@@ -132,6 +145,24 @@ export default function Signup({ role, setPage, setLoggedIn }) {
                 className="input-modern"
                 value={studentForm.email}
                 onChange={(e) => setStudentForm({ ...studentForm, email: e.target.value })}
+              />
+              <input
+                placeholder="Location"
+                className="input-modern"
+                value={studentForm.location}
+                onChange={(e) => setStudentForm({ ...studentForm, location: e.target.value })}
+              />
+              <input
+                placeholder="Skills (comma separated)"
+                className="input-modern"
+                value={studentForm.skills}
+                onChange={(e) => setStudentForm({ ...studentForm, skills: e.target.value })}
+              />
+              <input
+                placeholder="Domain"
+                className="input-modern"
+                value={studentForm.domain}
+                onChange={(e) => setStudentForm({ ...studentForm, domain: e.target.value })}
               />
             </div>
           </>
@@ -182,12 +213,12 @@ export default function Signup({ role, setPage, setLoggedIn }) {
         <button onClick={signup} disabled={loading} className="btn btn-secondary w-full mt-6">
           {loading ? "Creating account..." : "Sign up"}
         </button>
-        <button onClick={() => setPage(isStudent ? "login-student" : "login-company")} className="btn btn-outline w-full mt-3">
-          {isStudent ? "Already a student? Login" : "Already a company? Login"}
-        </button>
-        <button onClick={() => setPage(isStudent ? "signup-company" : "signup-student")} className="btn btn-outline w-full mt-3">
-          {isStudent ? "Signup as Company" : "Signup as Student"}
-        </button>
+        <p className="text-center mt-4 text-sm muted">
+          Have an account?{" "}
+          <button onClick={() => setPage("login")} className="underline font-semibold">
+            Login
+          </button>
+        </p>
         <button onClick={() => setPage("home")} className="w-full mt-3 text-sm muted">
           Back to Home
         </button>
