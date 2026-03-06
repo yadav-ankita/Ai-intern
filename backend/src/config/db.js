@@ -5,7 +5,7 @@ const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
   database: process.env.DB_NAME || "internship_AI",
   password: process.env.DB_PASSWORD || "1234",
-  port: Number(process.env.DB_PORT || 5432),
+  port: Number(process.env.DB_PORT || 5433 || 5432),
 });
 
 const ensureSchema = async () => {
