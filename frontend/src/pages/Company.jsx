@@ -8,10 +8,24 @@ export default function Company({ onLogout }) {
   const [location, setLocation] = useState("");
   const [stipend, setStipend] = useState("");
   const [durationMonths, setDurationMonths] = useState("");
+  const [seatsRequired, setSeatsRequired] = useState("");
+  const [applicationOpenDays, setApplicationOpenDays] = useState("30");
   const [domain, setDomain] = useState("");
   const [experienceLevel, setExperienceLevel] = useState("Beginner");
   const [list, setList] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    skills: "",
+    location: "",
+    stipend: "",
+    durationMonths: "",
+    seatsRequired: "",
+    applicationOpenDays: "",
+    domain: "",
+    experienceLevel: "Beginner",
+  });
 
   const companyEmail = (localStorage.getItem("userEmail") || "").toLowerCase();
   const companyName = localStorage.getItem("userName") || "";
@@ -45,12 +59,18 @@ export default function Company({ onLogout }) {
 
   const postInternship = async () => {
     try {
+      if (!companyEmail) {
+        alert("Please login again as company");
+        return;
+      }
       await axios.post(`${API_BASE_URL}/post-internship`, {
         title,
         skills,
         location,
         stipend,
         durationMonths,
+        seatsRequired,
+        applicationOpenDays,
         domain,
         experienceLevel,
         companyEmail,
@@ -62,11 +82,13 @@ export default function Company({ onLogout }) {
       setLocation("");
       setStipend("");
       setDurationMonths("");
+      setSeatsRequired("");
+      setApplicationOpenDays("30");
       setDomain("");
       setExperienceLevel("Beginner");
       fetchInternships();
     } catch (err) {
-      alert("Error posting internship");
+      alert(err?.response?.data || "Error posting internship");
     }
   };
 
@@ -79,6 +101,53 @@ export default function Company({ onLogout }) {
       fetchApplications();
     } catch (err) {
       alert(err?.response?.data || "Failed to update status");
+    }
+  };
+
+  const deleteInternship = async (internshipId) => {
+    const confirmed = window.confirm("Delete this internship? This will also remove related applications.");
+    if (!confirmed) return;
+
+    try {
+      await axios.delete(`${API_BASE_URL}/company/internships/${internshipId}`, {
+        data: { companyEmail },
+      });
+      await fetchInternships();
+      await fetchApplications();
+    } catch (err) {
+      alert(err?.response?.data || "Failed to delete internship");
+    }
+  };
+
+  const startEditInternship = (item) => {
+    setEditingId(item.id);
+    setEditForm({
+      title: item.title || "",
+      skills: item.skills || "",
+      location: item.location || "",
+      stipend: item.stipend || "",
+      durationMonths: item.duration_months || "",
+      seatsRequired: item.seats_required ?? "",
+      applicationOpenDays: item.application_open_days ?? "",
+      domain: item.domain || "",
+      experienceLevel: item.experience_level || "Beginner",
+    });
+  };
+
+  const cancelEditInternship = () => {
+    setEditingId(null);
+  };
+
+  const saveEditInternship = async (internshipId) => {
+    try {
+      await axios.put(`${API_BASE_URL}/company/internships/${internshipId}`, {
+        companyEmail,
+        ...editForm,
+      });
+      setEditingId(null);
+      await fetchInternships();
+    } catch (err) {
+      alert(err?.response?.data || "Failed to update internship");
     }
   };
 
@@ -102,6 +171,22 @@ export default function Company({ onLogout }) {
               <input className="input-modern" placeholder="Location" value={location} onChange={(e) => setLocation(e.target.value)} />
               <input className="input-modern" placeholder="Stipend" value={stipend} onChange={(e) => setStipend(e.target.value)} />
               <input className="input-modern" placeholder="Duration (Months)" value={durationMonths} onChange={(e) => setDurationMonths(e.target.value)} />
+              <input
+                type="number"
+                min="1"
+                className="input-modern"
+                placeholder="Seats Required"
+                value={seatsRequired}
+                onChange={(e) => setSeatsRequired(e.target.value)}
+              />
+              <input
+                type="number"
+                min="1"
+                className="input-modern"
+                placeholder="Application Open (Days)"
+                value={applicationOpenDays}
+                onChange={(e) => setApplicationOpenDays(e.target.value)}
+              />
               <input className="input-modern" placeholder="Domain (Frontend, AI, Data...)" value={domain} onChange={(e) => setDomain(e.target.value)} />
               <select className="input-modern" value={experienceLevel} onChange={(e) => setExperienceLevel(e.target.value)}>
                 <option>Beginner</option>
@@ -164,11 +249,52 @@ export default function Company({ onLogout }) {
             <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
               {list.map((item) => (
                 <div key={item.id} className="rounded-xl border border-white/20 bg-white/5 p-4">
-                  <h3 className="text-lg font-semibold text-cyan-200">{item.title}</h3>
-                  <p className="muted text-sm mt-1">{item.location}</p>
-                  <p className="mt-2 font-semibold">INR {item.stipend}</p>
-                  <p className="text-sm mt-1">Duration: {item.duration_months || "-"}</p>
-                  <p className="text-sm mt-2">{item.skills}</p>
+                  {editingId === item.id ? (
+                    <div className="space-y-2">
+                      <input className="input-modern" value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} />
+                      <input className="input-modern" value={editForm.skills} onChange={(e) => setEditForm((p) => ({ ...p, skills: e.target.value }))} />
+                      <input className="input-modern" value={editForm.location} onChange={(e) => setEditForm((p) => ({ ...p, location: e.target.value }))} />
+                      <input className="input-modern" type="number" min="0" value={editForm.stipend} onChange={(e) => setEditForm((p) => ({ ...p, stipend: e.target.value }))} />
+                      <input className="input-modern" value={editForm.durationMonths} onChange={(e) => setEditForm((p) => ({ ...p, durationMonths: e.target.value }))} />
+                      <input className="input-modern" type="number" min="0" value={editForm.seatsRequired} onChange={(e) => setEditForm((p) => ({ ...p, seatsRequired: e.target.value }))} />
+                      <input className="input-modern" type="number" min="1" value={editForm.applicationOpenDays} onChange={(e) => setEditForm((p) => ({ ...p, applicationOpenDays: e.target.value }))} />
+                      <input className="input-modern" value={editForm.domain} onChange={(e) => setEditForm((p) => ({ ...p, domain: e.target.value }))} />
+                      <select className="input-modern" value={editForm.experienceLevel} onChange={(e) => setEditForm((p) => ({ ...p, experienceLevel: e.target.value }))}>
+                        <option>Beginner</option>
+                        <option>Intermediate</option>
+                        <option>Advanced</option>
+                      </select>
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => saveEditInternship(item.id)} className="btn btn-secondary">Save</button>
+                        <button onClick={cancelEditInternship} className="btn btn-danger">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <h3 className="text-lg font-semibold text-cyan-200">{item.title}</h3>
+                      <p className="muted text-sm mt-1">{item.location}</p>
+                      <p className="mt-2 font-semibold">INR {item.stipend}</p>
+                      <p className="text-sm mt-1">Duration: {item.duration_months || "-"}</p>
+                      <p className="text-sm mt-1">Seats: {item.seats_required || "-"}</p>
+                      <p className="text-sm mt-1">Applications Open: {item.application_open_days || "-"} days</p>
+                      <p className="text-sm mt-1">Expires At: {item.application_expires_at ? new Date(item.application_expires_at).toLocaleString() : "-"}</p>
+                      <p className="text-sm mt-2">{item.skills}</p>
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => startEditInternship(item)}
+                          className="btn btn-secondary"
+                        >
+                          Edit Internship
+                        </button>
+                        <button
+                          onClick={() => deleteInternship(item.id)}
+                          className="btn btn-danger"
+                        >
+                          Delete Internship
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>

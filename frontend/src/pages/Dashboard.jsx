@@ -181,6 +181,26 @@ export default function Dashboard({ onLogout }) {
     }
   };
 
+  const cancelApplication = async (applicationId) => {
+    if (!userEmail) {
+      alert("Please login again");
+      return;
+    }
+
+    const confirmed = window.confirm("Cancel this application?");
+    if (!confirmed) return;
+
+    try {
+      await axios.post(`${API_BASE_URL}/student/applications/${applicationId}/cancel`, {
+        studentEmail: userEmail,
+      });
+      await loadMyApplications();
+      alert("Application cancelled");
+    } catch (err) {
+      alert(err?.response?.data || "Failed to cancel application");
+    }
+  };
+
   const findApplicationByInternship = (internshipId) =>
     applications.find((a) => Number(a.internship_id) === Number(internshipId));
 
@@ -324,6 +344,7 @@ export default function Dashboard({ onLogout }) {
                     <p>Location: {item.location || "Remote"}</p>
                     <p>Stipend: INR {item.stipend || "-"}/mo</p>
                     <p>Duration: {item.duration_months || studentProfile.durationMonths || "Flexible"} Months</p>
+                    <p>Seats: {item.seats_required || "-"}</p>
                   </div>
 
                   <div className="mt-5 flex items-center justify-between">
@@ -363,6 +384,14 @@ export default function Dashboard({ onLogout }) {
                       {app.status}
                     </span>
                   </p>
+                  {app.status === "pending" && (
+                    <button
+                      onClick={() => cancelApplication(app.id)}
+                      className="rounded-lg bg-rose-500 text-white px-4 py-2 font-semibold hover:bg-rose-600 transition mt-4"
+                    >
+                      Cancel Application
+                    </button>
+                  )}
                 </div>
               ))
             )}

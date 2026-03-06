@@ -30,6 +30,26 @@ const isPdfUpload = (file) => {
   return allowedMime.includes(mime) || name.endsWith(".pdf");
 };
 
+const parseOpenDays = (value, fallback = null) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return fallback;
+  const days = Number(raw);
+  if (!Number.isInteger(days) || days <= 0) return null;
+  return days;
+};
+
+const parseSeatsRequired = (value) => {
+  const seats = Number(String(value ?? "").trim());
+  if (!Number.isInteger(seats) || seats <= 0) return null;
+  return seats;
+};
+
+const parseNonNegativeInt = (value) => {
+  const num = Number(String(value ?? "").trim());
+  if (!Number.isInteger(num) || num < 0) return null;
+  return num;
+};
+
 ensureSchema();
 
 app.get("/", (req, res) => {
@@ -87,13 +107,21 @@ app.post("/register/company", async (req, res) => {
 });
 
 const getTopRecommendations = async (profileInput, limit = 5) => {
-  const result = await pool.query("SELECT * FROM internships");
+  const result = await pool.query(
+    `SELECT * FROM internships
+     WHERE (application_expires_at IS NULL OR application_expires_at > NOW())
+       AND (seats_required IS NULL OR seats_required > 0)`
+  );
   const scored = scoreInternships(result.rows, buildRecommendationProfile(profileInput));
   return scored.slice(0, limit);
 };
 
 const getResumeRecommendations = async (resumeFilename, profileInput = {}, limit = 5) => {
-  const result = await pool.query("SELECT * FROM internships");
+  const result = await pool.query(
+    `SELECT * FROM internships
+     WHERE (application_expires_at IS NULL OR application_expires_at > NOW())
+       AND (seats_required IS NULL OR seats_required > 0)`
+  );
   const internships = result.rows || [];
 
   if (internships.length === 0) return [];
@@ -195,26 +223,47 @@ app.post("/post-internship", async (req, res) => {
       location,
       stipend,
       durationMonths,
+      seatsRequired,
+      applicationOpenDays,
       companyEmail,
       companyName,
       domain,
       experienceLevel,
     } = req.body;
 
+    if (!companyEmail || !String(companyEmail).trim()) {
+      return res.status(400).send("Company email is required. Please login again.");
+    }
+    if (!title || !String(title).trim()) {
+      return res.status(400).send("Title is required");
+    }
+    if (!skills || !String(skills).trim()) {
+      return res.status(400).send("Skills are required");
+    }
     if (!durationMonths || !String(durationMonths).trim()) {
       return res.status(400).send("Duration is required");
+    }
+    const seats = parseSeatsRequired(seatsRequired);
+    if (!seats) {
+      return res.status(400).send("Seats required must be a positive integer");
+    }
+    const openDays = parseOpenDays(applicationOpenDays, 30);
+    if (!openDays) {
+      return res.status(400).send("Application open duration (days) must be a positive integer");
     }
 
     await pool.query(
       `INSERT INTO internships
-      (title,skills,location,stipend,duration_months,posted_by_email,posted_by_name,domain,experience_level)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      (title,skills,location,stipend,duration_months,seats_required,application_open_days,application_expires_at,posted_by_email,posted_by_name,domain,experience_level)
+      VALUES($1,$2,$3,$4,$5,$6::int,$7::int,NOW() + make_interval(days => $7::int),$8,$9,$10,$11)`,
       [
         title,
         skills,
         location,
         stipend,
         durationMonths,
+        seats,
+        openDays,
         companyEmail || null,
         companyName || null,
         domain || null,
@@ -224,8 +273,8 @@ app.post("/post-internship", async (req, res) => {
 
     res.send("Internship posted successfully");
   } catch (err) {
-    console.log(err);
-    res.send("Error posting internship");
+    console.error(err);
+    res.status(500).send(`Error posting internship: ${err.message || "unknown error"}`);
   }
 });
 
@@ -306,7 +355,103 @@ app.get("/company/internships", async (req, res) => {
   res.json(result.rows);
 });
 
+app.delete("/company/internships/:id", async (req, res) => {
+  try {
+    const internshipId = req.params.id;
+    const companyEmail = (req.body.companyEmail || "").trim().toLowerCase();
+
+    if (!companyEmail) return res.status(400).send("companyEmail is required");
+
+    const result = await pool.query(
+      `DELETE FROM internships
+       WHERE id=$1 AND LOWER(posted_by_email)=LOWER($2)
+       RETURNING id`,
+      [internshipId, companyEmail]
+    );
+
+    if (!result.rows[0]) {
+      return res.status(404).send("Internship not found or not allowed to delete");
+    }
+
+    res.send("Internship deleted");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Failed to delete internship");
+  }
+});
+
+app.put("/company/internships/:id", async (req, res) => {
+  try {
+    const internshipId = req.params.id;
+    const companyEmail = String(req.body.companyEmail || "").trim().toLowerCase();
+    if (!companyEmail) return res.status(400).send("companyEmail is required");
+
+    const existingResult = await pool.query(
+      "SELECT * FROM internships WHERE id=$1 AND LOWER(posted_by_email)=LOWER($2)",
+      [internshipId, companyEmail]
+    );
+    const existing = existingResult.rows[0];
+    if (!existing) return res.status(404).send("Internship not found or not allowed to edit");
+
+    const nextTitle = String(req.body.title ?? existing.title ?? "").trim();
+    const nextSkills = String(req.body.skills ?? existing.skills ?? "").trim();
+    const nextLocation = String(req.body.location ?? existing.location ?? "").trim();
+    const nextStipend = Number(req.body.stipend ?? existing.stipend ?? 0);
+    const nextDurationMonths = String(req.body.durationMonths ?? existing.duration_months ?? "").trim();
+    const nextDomain = String(req.body.domain ?? existing.domain ?? "").trim();
+    const nextExperienceLevel = String(req.body.experienceLevel ?? existing.experience_level ?? "").trim();
+
+    if (!nextTitle) return res.status(400).send("Title is required");
+    if (!nextSkills) return res.status(400).send("Skills are required");
+    if (!nextDurationMonths) return res.status(400).send("Duration is required");
+    if (!Number.isFinite(nextStipend) || nextStipend < 0) return res.status(400).send("Stipend is invalid");
+
+    const seatsRaw = req.body.seatsRequired ?? existing.seats_required;
+    const openDaysRaw = req.body.applicationOpenDays ?? existing.application_open_days ?? 30;
+
+    const nextSeats = parseNonNegativeInt(seatsRaw);
+    if (nextSeats === null) return res.status(400).send("Seats required must be 0 or a positive integer");
+
+    const nextOpenDays = parseOpenDays(openDaysRaw);
+    if (!nextOpenDays) return res.status(400).send("Application open duration (days) must be a positive integer");
+
+    await pool.query(
+      `UPDATE internships
+       SET title=$1,
+           skills=$2,
+           location=$3,
+           stipend=$4,
+           duration_months=$5,
+           seats_required=$6,
+           application_open_days=$7,
+           application_expires_at=NOW() + make_interval(days => $7::int),
+           domain=$8,
+           experience_level=$9
+       WHERE id=$10 AND LOWER(posted_by_email)=LOWER($11)`,
+      [
+        nextTitle,
+        nextSkills,
+        nextLocation,
+        nextStipend,
+        nextDurationMonths,
+        nextSeats,
+        nextOpenDays,
+        nextDomain || null,
+        nextExperienceLevel || null,
+        internshipId,
+        companyEmail,
+      ]
+    );
+
+    res.send("Internship updated");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Failed to update internship");
+  }
+});
+
 app.post("/apply-internship", upload.single("resume"), async (req, res) => {
+  const client = await pool.connect();
   try {
     const {
       internshipId,
@@ -332,29 +477,47 @@ app.post("/apply-internship", upload.single("resume"), async (req, res) => {
       }
       return res.status(400).send("Only PDF resumes are allowed");
     }
+    const normalizedStudentEmail = (studentEmail || "").trim().toLowerCase();
 
-    const internshipResult = await pool.query("SELECT * FROM internships WHERE id=$1", [internshipId]);
+    await client.query("BEGIN");
+    const rollbackAndSend = async (status, message) => {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_) {}
+      return res.status(status).send(message);
+    };
+
+    const internshipResult = await client.query("SELECT * FROM internships WHERE id=$1 FOR UPDATE", [internshipId]);
     const internship = internshipResult.rows[0];
 
-    if (!internship) return res.status(404).send("Internship not found");
+    if (!internship) return rollbackAndSend(404, "Internship not found");
+    if (
+      internship.application_expires_at &&
+      new Date(internship.application_expires_at).getTime() <= Date.now()
+    ) {
+      return rollbackAndSend(400, "This internship has expired and is no longer accepting applications");
+    }
+    if (typeof internship.seats_required === "number" && internship.seats_required <= 0) {
+      return rollbackAndSend(400, "No seats available for this internship");
+    }
 
-    const duplicateCheck = await pool.query(
+    const duplicateCheck = await client.query(
       "SELECT id FROM internship_applications WHERE internship_id=$1 AND LOWER(student_email)=LOWER($2)",
-      [internshipId, studentEmail]
+      [internshipId, normalizedStudentEmail]
     );
 
     if (duplicateCheck.rows[0]) {
-      return res.status(400).send("You already applied to this internship");
+      return rollbackAndSend(400, "You already applied to this internship");
     }
 
-    await pool.query(
+    await client.query(
       `INSERT INTO internship_applications
       (internship_id, company_email, student_email, student_name, preferred_domain, preferred_location, skills, expected_stipend, duration_months, experience_level, resume_filename)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         internshipId,
         internship.posted_by_email || null,
-        (studentEmail || "").trim().toLowerCase(),
+        normalizedStudentEmail,
         studentName || null,
         preferredDomain || null,
         preferredLocation || null,
@@ -366,10 +529,27 @@ app.post("/apply-internship", upload.single("resume"), async (req, res) => {
       ]
     );
 
+    if (typeof internship.seats_required === "number") {
+      const seatUpdate = await client.query(
+        "UPDATE internships SET seats_required = seats_required - 1 WHERE id=$1 AND seats_required > 0 RETURNING seats_required",
+        [internshipId]
+      );
+      if (!seatUpdate.rows[0]) {
+        return rollbackAndSend(400, "No seats available for this internship");
+      }
+    }
+
+    await client.query("COMMIT");
+
     res.send("Applied successfully");
   } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (_) {}
     console.error(err);
     res.status(500).send("Failed to apply");
+  } finally {
+    client.release();
   }
 });
 
@@ -423,6 +603,57 @@ app.get("/student/applications", async (req, res) => {
   }
 });
 
+const cancelStudentApplication = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const applicationId = req.params.id;
+    const studentEmail = (req.body?.studentEmail || req.query?.studentEmail || "").trim().toLowerCase();
+    if (!studentEmail) return res.status(400).send("studentEmail is required");
+
+    await client.query("BEGIN");
+
+    const applicationResult = await client.query(
+      `SELECT id, internship_id
+       FROM internship_applications
+       WHERE id=$1 AND LOWER(student_email)=LOWER($2)
+       FOR UPDATE`,
+      [applicationId, studentEmail]
+    );
+
+    const application = applicationResult.rows[0];
+    if (!application) {
+      await client.query("ROLLBACK");
+      return res.status(404).send("Application not found");
+    }
+
+    await client.query("DELETE FROM internship_applications WHERE id=$1", [applicationId]);
+
+    await client.query(
+      `UPDATE internships
+       SET seats_required = CASE
+         WHEN seats_required IS NULL THEN NULL
+         ELSE seats_required + 1
+       END
+       WHERE id=$1`,
+      [application.internship_id]
+    );
+
+    await client.query("COMMIT");
+    res.send("Application cancelled successfully");
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (_) {}
+    console.error(err);
+    res.status(500).send("Failed to cancel application");
+  } finally {
+    client.release();
+  }
+};
+
+app.delete("/student/applications/:id", cancelStudentApplication);
+app.post("/student/applications/:id/cancel", cancelStudentApplication);
+
 app.get("/company/applications", async (req, res) => {
   try {
     const companyEmail = (req.query.email || "").trim().toLowerCase();
@@ -445,6 +676,7 @@ app.get("/company/applications", async (req, res) => {
 });
 
 app.post("/company/applications/:id/decision", async (req, res) => {
+  const client = await pool.connect();
   try {
     const applicationId = req.params.id;
     const { status, companyEmail } = req.body;
@@ -453,21 +685,72 @@ app.post("/company/applications/:id/decision", async (req, res) => {
       return res.status(400).send("status must be approved or rejected");
     }
     if (!companyEmail) return res.status(400).send("companyEmail is required");
+    const normalizedCompanyEmail = String(companyEmail).trim().toLowerCase();
 
-    const result = await pool.query(
-      `UPDATE internship_applications
-       SET status=$1
-       WHERE id=$2 AND LOWER(company_email)=LOWER($3)
-       RETURNING *`,
-      [status, applicationId, companyEmail]
+    await client.query("BEGIN");
+
+    const appResult = await client.query(
+      `SELECT id, internship_id, status
+       FROM internship_applications
+       WHERE id=$1 AND LOWER(company_email)=LOWER($2)
+       FOR UPDATE`,
+      [applicationId, normalizedCompanyEmail]
     );
 
-    if (!result.rows[0]) return res.status(404).send("Application not found");
+    const application = appResult.rows[0];
+    if (!application) {
+      await client.query("ROLLBACK");
+      return res.status(404).send("Application not found");
+    }
 
+    const previousStatus = application.status;
+
+    if (previousStatus !== status) {
+      if (status === "rejected" && previousStatus !== "rejected") {
+        await client.query(
+          `UPDATE internships
+           SET seats_required = CASE
+             WHEN seats_required IS NULL THEN NULL
+             ELSE seats_required + 1
+           END
+           WHERE id=$1`,
+          [application.internship_id]
+        );
+      }
+
+      if (previousStatus === "rejected" && status !== "rejected") {
+        const seatResult = await client.query(
+          `UPDATE internships
+           SET seats_required = seats_required - 1
+           WHERE id=$1 AND seats_required > 0
+           RETURNING id`,
+          [application.internship_id]
+        );
+
+        if (!seatResult.rows[0]) {
+          await client.query("ROLLBACK");
+          return res.status(400).send("No seats available to change this decision");
+        }
+      }
+
+      await client.query(
+        `UPDATE internship_applications
+         SET status=$1
+         WHERE id=$2`,
+        [status, applicationId]
+      );
+    }
+
+    await client.query("COMMIT");
     res.send(`Application ${status}`);
   } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (_) {}
     console.error(err);
     res.status(500).send("Failed to update application status");
+  } finally {
+    client.release();
   }
 });
 

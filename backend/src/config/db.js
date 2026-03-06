@@ -16,7 +16,10 @@ const ensureSchema = async () => {
       ADD COLUMN IF NOT EXISTS posted_by_name TEXT,
       ADD COLUMN IF NOT EXISTS domain TEXT,
       ADD COLUMN IF NOT EXISTS experience_level TEXT,
-      ADD COLUMN IF NOT EXISTS duration_months TEXT;
+      ADD COLUMN IF NOT EXISTS duration_months TEXT,
+      ADD COLUMN IF NOT EXISTS application_open_days INTEGER,
+      ADD COLUMN IF NOT EXISTS application_expires_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS seats_required INTEGER;
     `);
 
     await pool.query(`
@@ -36,6 +39,36 @@ const ensureSchema = async () => {
         status TEXT NOT NULL DEFAULT 'pending',
         applied_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = 'chk_internship_applications_status'
+        ) THEN
+          ALTER TABLE internship_applications
+          ADD CONSTRAINT chk_internship_applications_status
+          CHECK (status IN ('pending', 'approved', 'rejected'));
+        END IF;
+      END $$;
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = 'uq_internship_applications_unique_student_per_internship'
+        ) THEN
+          ALTER TABLE internship_applications
+          ADD CONSTRAINT uq_internship_applications_unique_student_per_internship
+          UNIQUE (internship_id, student_email);
+        END IF;
+      END $$;
     `);
   } catch (err) {
     console.error("Schema setup failed:", err);
