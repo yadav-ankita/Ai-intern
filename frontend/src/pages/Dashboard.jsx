@@ -3,6 +3,9 @@ import axios from "axios";
 import { API_BASE_URL } from "../config/api";
 
 export default function Dashboard({ onLogout }) {
+  const userEmail = localStorage.getItem("userEmail") || "";
+  const userName = localStorage.getItem("userName") || "";
+
   const [studentProfile, setStudentProfile] = useState({
     preferredDomain: "",
     preferredLocation: "",
@@ -20,9 +23,22 @@ export default function Dashboard({ onLogout }) {
   const [extracting, setExtracting] = useState(false);
   const [applyingId, setApplyingId] = useState(null);
   const [activeTab, setActiveTab] = useState("recommended");
-
-  const userEmail = localStorage.getItem("userEmail") || "";
-  const userName = localStorage.getItem("userName") || "";
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [accountProfile, setAccountProfile] = useState({
+    fullName: userName,
+    email: userEmail,
+    location: "",
+    skills: "",
+    domain: "",
+  });
+  const [profileForm, setProfileForm] = useState({
+    fullName: userName,
+    location: "",
+    skills: "",
+    domain: "",
+  });
 
   useEffect(() => {
     const raw = localStorage.getItem("studentProfile");
@@ -54,9 +70,62 @@ export default function Dashboard({ onLogout }) {
     }
   };
 
+  const loadStudentAccountProfile = async () => {
+    if (!userEmail) return;
+    try {
+      setProfileLoading(true);
+      const res = await axios.get(`${API_BASE_URL}/student/profile`, {
+        params: { email: userEmail },
+      });
+      const profile = res.data || {};
+
+      const nextAccount = {
+        fullName: profile.name || userName || "",
+        email: profile.email || userEmail,
+        location: profile.location || "",
+        skills: profile.skills || "",
+        domain: profile.domain || "",
+      };
+
+      setAccountProfile(nextAccount);
+      setProfileForm({
+        fullName: nextAccount.fullName,
+        location: nextAccount.location,
+        skills: nextAccount.skills,
+        domain: nextAccount.domain,
+      });
+
+      localStorage.setItem("userName", nextAccount.fullName);
+
+      setStudentProfile((prev) => ({
+        ...prev,
+        preferredDomain: nextAccount.domain || prev.preferredDomain,
+        preferredLocation: nextAccount.location || prev.preferredLocation,
+        skills: nextAccount.skills || prev.skills,
+      }));
+
+      const raw = localStorage.getItem("studentProfile");
+      const existing = raw ? JSON.parse(raw) : {};
+      localStorage.setItem(
+        "studentProfile",
+        JSON.stringify({
+          ...existing,
+          preferredDomain: nextAccount.domain || existing.preferredDomain || "",
+          preferredLocation: nextAccount.location || existing.preferredLocation || "",
+          skills: nextAccount.skills || existing.skills || "",
+        })
+      );
+    } catch (err) {
+      console.log("Failed to load student profile");
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadMyApplications();
-  }, []);
+    loadStudentAccountProfile();
+  }, [userEmail]);
 
   const updateProfileField = (key, value) => {
     setStudentProfile((prev) => ({ ...prev, [key]: value }));
@@ -204,6 +273,78 @@ export default function Dashboard({ onLogout }) {
   const findApplicationByInternship = (internshipId) =>
     applications.find((a) => Number(a.internship_id) === Number(internshipId));
 
+  const saveProfileChanges = async () => {
+    if (!userEmail) {
+      alert("Please login again");
+      return;
+    }
+
+    const payload = { email: userEmail };
+    const nextFullName = profileForm.fullName.trim();
+    const nextLocation = profileForm.location.trim();
+    const nextSkills = profileForm.skills.trim();
+    const nextDomain = profileForm.domain.trim();
+
+    if (nextFullName !== String(accountProfile.fullName || "").trim()) payload.fullName = nextFullName;
+    if (nextLocation !== String(accountProfile.location || "").trim()) payload.location = nextLocation;
+    if (nextSkills !== String(accountProfile.skills || "").trim()) payload.skills = nextSkills;
+    if (nextDomain !== String(accountProfile.domain || "").trim()) payload.domain = nextDomain;
+
+    if (Object.keys(payload).length === 1) {
+      alert("No profile changes detected");
+      return;
+    }
+
+    try {
+      setSavingProfile(true);
+      const res = await axios.patch(`${API_BASE_URL}/student/profile`, payload);
+      const updated = res.data || {};
+
+      const nextAccount = {
+        fullName: updated.name || profileForm.fullName.trim(),
+        email: updated.email || userEmail,
+        location: updated.location || "",
+        skills: updated.skills || "",
+        domain: updated.domain || "",
+      };
+
+      setAccountProfile(nextAccount);
+      setProfileForm({
+        fullName: nextAccount.fullName,
+        location: nextAccount.location,
+        skills: nextAccount.skills,
+        domain: nextAccount.domain,
+      });
+      setEditingProfile(false);
+
+      localStorage.setItem("userName", nextAccount.fullName);
+      setStudentProfile((prev) => ({
+        ...prev,
+        preferredDomain: nextAccount.domain || prev.preferredDomain,
+        preferredLocation: nextAccount.location || prev.preferredLocation,
+        skills: nextAccount.skills || prev.skills,
+      }));
+
+      const raw = localStorage.getItem("studentProfile");
+      const existing = raw ? JSON.parse(raw) : {};
+      localStorage.setItem(
+        "studentProfile",
+        JSON.stringify({
+          ...existing,
+          preferredDomain: nextAccount.domain || existing.preferredDomain || "",
+          preferredLocation: nextAccount.location || existing.preferredLocation || "",
+          skills: nextAccount.skills || existing.skills || "",
+        })
+      );
+
+      alert("Profile updated successfully");
+    } catch (err) {
+      alert(err?.response?.data || "Failed to update profile");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="max-w-[1400px] mx-auto px-4 py-5 md:px-6">
@@ -218,6 +359,90 @@ export default function Dashboard({ onLogout }) {
           >
             Logout
           </button>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-5 mt-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="heading-font text-2xl font-bold text-slate-900">Student Profile</h2>
+              <p className="text-slate-500 text-sm mt-1">View your profile and update only the fields you want to change.</p>
+            </div>
+            {!editingProfile && (
+              <button
+                onClick={() => setEditingProfile(true)}
+                className="rounded-lg bg-slate-900 text-white px-4 py-2 font-semibold hover:bg-slate-800 transition"
+              >
+                Update Profile
+              </button>
+            )}
+          </div>
+
+          {profileLoading ? (
+            <p className="text-slate-500 mt-4">Loading profile...</p>
+          ) : editingProfile ? (
+            <div className="mt-4 space-y-3">
+              <input
+                className="rounded-lg border border-slate-300 px-3 py-2 w-full"
+                placeholder="Full Name"
+                value={profileForm.fullName}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, fullName: e.target.value }))}
+              />
+              <input
+                className="rounded-lg border border-slate-300 px-3 py-2 w-full bg-slate-100"
+                value={accountProfile.email}
+                readOnly
+              />
+              <input
+                className="rounded-lg border border-slate-300 px-3 py-2 w-full"
+                placeholder="Location"
+                value={profileForm.location}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, location: e.target.value }))}
+              />
+              <input
+                className="rounded-lg border border-slate-300 px-3 py-2 w-full"
+                placeholder="Skills (comma separated)"
+                value={profileForm.skills}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, skills: e.target.value }))}
+              />
+              <input
+                className="rounded-lg border border-slate-300 px-3 py-2 w-full"
+                placeholder="Domain"
+                value={profileForm.domain}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, domain: e.target.value }))}
+              />
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={saveProfileChanges}
+                  disabled={savingProfile}
+                  className="rounded-lg bg-indigo-600 text-white px-4 py-2 font-semibold hover:bg-indigo-700 transition"
+                >
+                  {savingProfile ? "Saving..." : "Save Changes"}
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingProfile(false);
+                    setProfileForm({
+                      fullName: accountProfile.fullName,
+                      location: accountProfile.location,
+                      skills: accountProfile.skills,
+                      domain: accountProfile.domain,
+                    });
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-3 mt-4 text-slate-700">
+              <p><span className="font-semibold">Full Name:</span> {accountProfile.fullName || "-"}</p>
+              <p><span className="font-semibold">Email:</span> {accountProfile.email || "-"}</p>
+              <p><span className="font-semibold">Location:</span> {accountProfile.location || "-"}</p>
+              <p><span className="font-semibold">Domain:</span> {accountProfile.domain || "-"}</p>
+              <p className="md:col-span-2"><span className="font-semibold">Skills:</span> {accountProfile.skills || "-"}</p>
+            </div>
+          )}
         </div>
 
         <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-5 mt-5 shadow-sm">
